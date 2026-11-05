@@ -1,0 +1,16 @@
+# Host build
+build/
+
+# STM32CubeIDE / build outputs
+Debug/
+Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.d
+
+# Editor
+.vscode/
+.settings/
