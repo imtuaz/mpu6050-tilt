@@ -135,6 +135,73 @@ static void test_filter_rejects_accel_spike(void)
     CHECK(t.roll_deg < 2.0f);               /* filter barely reacts: 0.02*90 */
 }
 
+/* ---- gyro calibration tests ----------------------------------------- */
+
+static void test_gyro_calibration(void)
+{
+    mpu6050_gyro_bias_t b;
+    mpu6050_data_t d = {0};
+
+    mock_reset();
+    mock_set16(0x43,  131);     /* constant offset +1 dps on X  */
+    mock_set16(0x45, -262);     /* -2 dps on Y                  */
+    mock_set16(0x47,  0);       /* no offset on Z               */
+
+    CHECK(mpu6050_calibrate_gyro(100, &b) == MPU6050_OK);
+    CHECK_NEAR(b.gx_dps,  1.0f, 1e-4f);
+    CHECK_NEAR(b.gy_dps, -2.0f, 1e-4f);
+    CHECK_NEAR(b.gz_dps,  0.0f, 1e-4f);
+
+    /* Still board reading the same offset -> corrected rate is 0 */
+    d.gx_dps = 1.0f; d.gy_dps = -2.0f;
+    mpu6050_apply_gyro_bias(&d, &b);
+    CHECK_NEAR(d.gx_dps, 0.0f, 1e-4f);
+    CHECK_NEAR(d.gy_dps, 0.0f, 1e-4f);
+}
+
+static void test_gyro_calibration_no_overflow(void)
+{
+    mpu6050_gyro_bias_t b;
+
+    mock_reset();
+    mock_set16(0x43, 32767);    /* worst case: max value, many samples */
+    CHECK(mpu6050_calibrate_gyro(1000, &b) == MPU6050_OK);
+    CHECK_NEAR(b.gx_dps, 32767.0f / 131.0f, 0.01f);
+}
+
+static void test_gyro_calibration_errors(void)
+{
+    mpu6050_gyro_bias_t b;
+
+    mock_reset();
+    CHECK(mpu6050_calibrate_gyro(0, &b) == MPU6050_ERR_ARG);
+    CHECK(mpu6050_calibrate_gyro(10, 0) == MPU6050_ERR_ARG);
+    mock_fail_bus = 1;
+    CHECK(mpu6050_calibrate_gyro(10, &b) == MPU6050_ERR_BUS);
+}
+
+/* Without calibration a 1 dps offset makes the angle drift; with it, no drift */
+static void test_bias_removes_drift(void)
+{
+    tilt_t t_raw, t_cal;
+    mpu6050_gyro_bias_t b = {1.0f, 0.0f, 0.0f};
+    mpu6050_data_t d;
+
+    tilt_init(&t_raw, 0.98f);
+    tilt_init(&t_cal, 0.98f);
+    for (int i = 0; i < 500; i++) {
+        mpu6050_data_t flat = {0};
+        flat.az_g = 1.0f;
+        flat.gx_dps = 1.0f;                  /* board still, gyro reads +1 */
+        tilt_update(&t_raw, &flat, 0.01f);
+        d = flat;
+        mpu6050_apply_gyro_bias(&d, &b);
+        tilt_update(&t_cal, &d, 0.01f);
+    }
+    CHECK(t_raw.roll_deg > 0.4f);            /* steady error ~0.49 deg */
+    CHECK_NEAR(t_cal.roll_deg, 0.0f, 0.01f); /* calibrated: stays at 0 */
+}
+
 int main(void)
 {
     printf("Running tests...\n");
@@ -146,6 +213,10 @@ int main(void)
     test_filter_first_sample();
     test_filter_converges();
     test_filter_rejects_accel_spike();
+    test_gyro_calibration();
+    test_gyro_calibration_no_overflow();
+    test_gyro_calibration_errors();
+    test_bias_removes_drift();
 
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
