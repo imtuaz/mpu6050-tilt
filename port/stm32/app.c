@@ -11,6 +11,7 @@
  *     roll=  12.34 pitch=  -3.21 temp=27.5
  */
 #include <stdio.h>
+#include <string.h>
 #include "main.h"
 #include "app.h"
 #include "mpu6050.h"
@@ -20,14 +21,22 @@ extern UART_HandleTypeDef huart2;
 
 #define SAMPLE_PERIOD_MS 10
 #define FILTER_ALPHA     0.98f
+#define CALIB_SAMPLES    500    /* 500 x 2 ms = about 1 s */
 
 static tilt_t   s_tilt;
 static uint32_t s_last_tick;
 static int      s_sensor_ok;
+static mpu6050_gyro_bias_t s_bias;  /* zero until calibrated */
 
 static void uart_print(const char *s, int len)
 {
     HAL_UART_Transmit(&huart2, (uint8_t *)s, (uint16_t)len, 100);
+}
+
+/* Send a constant string; length computed with strlen, no manual counting */
+static void uart_puts(const char *s)
+{
+    uart_print(s, (int)strlen(s));
 }
 
 /* Format a float with 2 decimals using integers only, because newlib-nano
@@ -53,6 +62,14 @@ void app_init(void)
                  s_sensor_ok ? "OK" : "FAIL", err);
     uart_print(msg, n);
 
+    if (s_sensor_ok) {
+        uart_puts("Calibrating gyro, keep board still...\r\n");
+        if (mpu6050_calibrate_gyro(CALIB_SAMPLES, &s_bias) != MPU6050_OK)
+            uart_puts("Gyro calibration failed, using zero bias\r\n");
+        else
+            uart_puts("Gyro calibration done\r\n");
+    }
+
     tilt_init(&s_tilt, FILTER_ALPHA);
     s_last_tick = HAL_GetTick();
 }
@@ -73,10 +90,11 @@ void app_loop(void)
     s_last_tick = now;
 
     if (mpu6050_read_raw(&raw) != MPU6050_OK) {
-        uart_print("I2C read error\r\n", 16);
+        uart_puts("I2C read error\r\n");
         return;
     }
     mpu6050_convert(&raw, &data);
+    mpu6050_apply_gyro_bias(&data, &s_bias);
     tilt_update(&s_tilt, &data, dt);
 
     {

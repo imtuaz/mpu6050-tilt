@@ -42,8 +42,20 @@ typedef struct {
     float temp_c;                  /* temperature in deg C   */
 } mpu6050_data_t;
 
+/* Gyro zero-rate offset (deg/s), measured while the board is still */
+typedef struct {
+    float gx_dps, gy_dps, gz_dps;
+} mpu6050_gyro_bias_t;
+
+#define MPU6050_ERR_ARG   -3   /* invalid argument */
+
 int  mpu6050_init(void);
 int  mpu6050_read_raw(mpu6050_raw_t *raw);
 void mpu6050_convert(const mpu6050_raw_t *raw, mpu6050_data_t *out);
+
+/* Average `samples` gyro readings to estimate the bias.
+ * The board MUST be stationary during calibration. */
+int  mpu6050_calibrate_gyro(int samples, mpu6050_gyro_bias_t *bias);
+void mpu6050_apply_gyro_bias(mpu6050_data_t *d, const mpu6050_gyro_bias_t *bias);
 
 #endif /* MPU6050_H */

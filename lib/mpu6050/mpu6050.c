@@ -61,3 +61,34 @@ void mpu6050_convert(const mpu6050_raw_t *raw, mpu6050_data_t *out)
     /* Datasheet formula: T(degC) = raw / 340 + 36.53 */
     out->temp_c = raw->temp / 340.0f + 36.53f;
 }
+
+int mpu6050_calibrate_gyro(int samples, mpu6050_gyro_bias_t *bias)
+{
+    mpu6050_raw_t raw;
+    long sum_x = 0, sum_y = 0, sum_z = 0;  /* long: 1000 x 32767 overflows int16 */
+
+    if (samples <= 0 || bias == 0)
+        return MPU6050_ERR_ARG;
+
+    for (int i = 0; i < samples; i++) {
+        if (mpu6050_read_raw(&raw) != MPU6050_OK)
+            return MPU6050_ERR_BUS;
+        sum_x += raw.gx;
+        sum_y += raw.gy;
+        sum_z += raw.gz;
+        port_delay_ms(2);
+    }
+
+    /* Average raw value, then convert to deg/s */
+    bias->gx_dps = ((float)sum_x / samples) / MPU6050_GYRO_LSB_PER_DPS;
+    bias->gy_dps = ((float)sum_y / samples) / MPU6050_GYRO_LSB_PER_DPS;
+    bias->gz_dps = ((float)sum_z / samples) / MPU6050_GYRO_LSB_PER_DPS;
+    return MPU6050_OK;
+}
+
+void mpu6050_apply_gyro_bias(mpu6050_data_t *d, const mpu6050_gyro_bias_t *bias)
+{
+    d->gx_dps -= bias->gx_dps;
+    d->gy_dps -= bias->gy_dps;
+    d->gz_dps -= bias->gz_dps;
+}

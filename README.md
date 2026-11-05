@@ -33,7 +33,7 @@ test/          mock I2C bus + unit tests (run on PC)
 ```bash
 make test
 ```
-Expected: `24 passed, 0 failed`
+Expected: `37 passed, 0 failed`
 
 What is tested:
 - Init: wake-up and range registers written; wrong `WHO_AM_I` and bus errors detected
@@ -41,6 +41,8 @@ What is tested:
 - Unit conversion (g, deg/s, deg C)
 - Accelerometer angles at 0, 45 and 90 degrees
 - Filter: starts from accel angle, converges to true angle, rejects a single noise spike
+- Gyro calibration: bias averaging, no overflow at 1000 x max value, error handling,
+  and removal of the steady angle error caused by a 1 deg/s offset
 
 ## Use on STM32 (e.g. Nucleo-F401RE / Blue Pill)
 1. In CubeMX enable **I2C1** (100 kHz) and **USART2** (115200 8N1).
@@ -52,6 +54,7 @@ What is tested:
    /* inside while (1) */      app_loop();
    ```
 4. Open a serial terminal at 115200 baud.
+5. **Keep the board still for about 1 s after reset** while the gyro is calibrated.
 
 ## Wiring
 | MPU6050 | STM32 (I2C1 default) |
@@ -71,6 +74,6 @@ long-term drift. With dt = 10 ms the time constant is about
 `alpha * dt / (1 - alpha) = 0.49 s`.
 
 ## Limitations
-- No gyro bias calibration yet (a stationary offset slowly biases the angle)
+- Gyro bias is measured once at startup; it does not track temperature drift
 - Yaw is not estimated (needs a magnetometer)
 - Blocking I2C/UART calls; DMA/interrupt version is a possible next step
